@@ -9,7 +9,9 @@ include_directories( ${OpenCV_INCLUDE_DIRS} )
 include_directories( "/usr/include/eigen3/" )
 
 add_executable( readImage readImage.cpp )
+add_executable( slam slam.cpp )
 add_executable( stereoVision stereoVision.cpp )
 
 target_link_libraries( readImage ${OpenCV_LIBS} )
+target_link_libraries( slam ${OpenCV_LIBS} )
 target_link_libraries( stereoVision ${OpenCV_LIBS} )
