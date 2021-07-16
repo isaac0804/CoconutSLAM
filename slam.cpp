@@ -13,6 +13,7 @@ class Frame {
   public: 
     int index;
     Mat image;
+    vector<Point2f> uv; 
     
     Frame(int frame_index, Mat input_image) {
       index = frame_index;
@@ -21,28 +22,41 @@ class Frame {
 };
 
 void extractAndMatch(Frame &curr_frame, Frame &prev_frame) {
-  int MAX_FEATURES = 5000;
+  int MAX_FEATURES = 4000;
   float scale = 0.1; // must be integers..... 
   int frame_width = curr_frame.image.cols * scale;
   int frame_height = curr_frame.image.rows * scale;
 
+  vector<Point2f> coords; 
   vector<KeyPoint> keyPoints; 
   Mat descriptors; 
   Ptr<ORB> orb = ORB::create(MAX_FEATURES*scale*scale);
 
+  // Find and draw features
   for(size_t y = 0; y < 1/scale; y++)
   for(size_t x = 0; x < 1/scale; x++) {
     vector<KeyPoint> curr_keyPoints; 
     Mat curr_descriptors; 
     Rect roi = Rect(x*frame_width, y*frame_height, frame_width, frame_height);
     orb->detect(curr_frame.image(roi), curr_keyPoints);
-    for(auto keypoint : curr_keyPoints) {
-      circle(curr_frame.image, keypoint.pt+Point2f(x*frame_width, y*frame_height), 4, Scalar(0, 255, 0));
-    }
-    keyPoints.insert(keyPoints.end(), curr_keyPoints.begin(), curr_keyPoints.end());
-  }
 
-  cout << "Number of features: " << keyPoints.size() << endl;
+    for(auto keypoint : curr_keyPoints) {
+      keypoint.pt = keypoint.pt + Point2f(x*frame_width, y*frame_height);
+      coords.push_back(keypoint.pt); 
+      circle(curr_frame.image, keypoint.pt, 4, Scalar(0, 255, 0));
+    }
+
+    for(auto uv : prev_frame.uv) {
+      circle(curr_frame.image, uv, 4, Scalar(255, 0, 0));
+    }
+    keyPoints.insert(keyPoints.end(), curr_keyPoints.begin(), curr_keyPoints.end()); 
+  }
+  curr_frame.uv = coords; 
+
+  // Compute descriptors
+  // orb->compute(curr_frame.image, coords, 
+  
+  cout << "Number of features: " << coords.size() << endl;
 }
 
 int main(int argc, char **argv) {
