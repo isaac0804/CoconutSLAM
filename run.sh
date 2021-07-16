@@ -1,2 +1,2 @@
 #! /bin/sh
-./build/slam videos/driving2.mp4
+./build/slam videos/driving.mp4
