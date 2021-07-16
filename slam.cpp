@@ -9,7 +9,19 @@ using namespace std;
 using namespace cv;
 
 
-void extract(Mat &image) {
+class Frame {
+  public: 
+    int index;
+    Mat image;
+    
+    Frame(int frame_index, Mat input_image) {
+      index = frame_index;
+      image = input_image;
+      cout << "Register Frame " << index << endl;
+    }
+};
+
+void extractAndMatch(Mat &image) {
   int MAX_FEATURES = 1000;
   vector<KeyPoint> keyPoints; 
   Mat descriptors; 
@@ -36,21 +48,23 @@ int main(int argc, char **argv) {
     return -1;
   }
 
+  vector<Frame> frames;
   while(1) {
     // Load frame from video
     Mat frame;
     cap >> frame;
     if(frame.empty()) break;
+    frames.push_back(Frame(cap.get(1)-1, frame));
 
     // Feature Extraction using ORB
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
-    extract(frame);  
+    extractAndMatch(frame);  
     chrono::steady_clock::time_point end = chrono::steady_clock::now();
     chrono::duration<double> interval = chrono::duration_cast<chrono::duration<double>>(end - start);
     cout << "Time used         : " << interval.count() << endl;
       
     // Display
-    resize(frame, frame, Size(frame.cols/2, frame.rows/2));
+    resize(frames[cap.get(1)-1].image, frame, Size(frame.cols/2, frame.rows/2));
     imshow("Video", frame);
     char c = (char)waitKey(1000/cap.get(5)); // display according to original fps
     if(c==27) break; // Esc 
