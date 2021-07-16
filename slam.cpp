@@ -25,8 +25,8 @@ class Frame {
 };
 
 void extractAndMatch(Frame &curr_frame, Frame &prev_frame) {
-  int MAX_FEATURES = 3000;
-  float scale = 0.25; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
+  int MAX_FEATURES = 5000;
+  float scale = 1.0; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
   int frame_width = curr_frame.image.cols * scale;
   int frame_height = curr_frame.image.rows * scale;
 
@@ -63,11 +63,14 @@ void extractAndMatch(Frame &curr_frame, Frame &prev_frame) {
   matcher.knnMatch(descriptors, prev_frame.dps, knn_matches, 2);
 
   // Filter invalid matches 
-  const double thresh = 0.7;
+  const double thresh = 0.75;
+  const double dist_thresh = 0.1;
   vector<DMatch> good_matches;
   for(size_t i = 0; i < knn_matches.size(); i++) {
     if(knn_matches[i][0].distance < thresh * knn_matches[i][1].distance) {
+      if(sqrt((keypoints[knn_matches[i][0].queryIdx].pt.x - prev_frame.kps[knn_matches[i][0].trainIdx].pt.x)*(keypoints[knn_matches[i][0].queryIdx].pt.x - prev_frame.kps[knn_matches[i][0].trainIdx].pt.x) + (keypoints[knn_matches[i][0].queryIdx].pt.y - prev_frame.kps[knn_matches[i][0].trainIdx].pt.y)*(keypoints[knn_matches[i][0].queryIdx].pt.y - prev_frame.kps[knn_matches[i][0].trainIdx].pt.y)) < dist_thresh*sqrt(curr_frame.image.cols*curr_frame.image.cols+curr_frame.image.rows*curr_frame.image.rows)) {
         good_matches.push_back(knn_matches[i][0]);
+      }
     }
   }
 
