@@ -24,11 +24,6 @@ public:
     frames_id.push_back(frame_id);
     idxs.push_back(index);
   }
-  
-  void addObservation(int frame_id, int index) {
-    frames_id.push_back(frame_id);
-    idxs.push_back(index);
-  }
 };
 
 class Frame 
@@ -51,11 +46,6 @@ public:
     kps = frame_kps;
     dps = frame_dps;
   }
-
-  void addPoints(CocoPoint &point, int kps_index, int pts_index) {
-    pts.push_back(point); 
-    kps_idxs[kps_index] = pts_index; // kps_index[i] is the index of a point in pts 
-  }
 };
 
 
@@ -63,12 +53,12 @@ class Extractor
 {
 public: 
   int MAX_FEATURES = 4000;
-  double scale = 1.0;
+  double scale = 1.0; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
   double thresh = 0.75;
   double dist_thresh = 0.1;
 
   Extractor (int MAX_FEATURES = 4000, 
-            double scale = 1.0, // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
+            double scale = 1.0,
             double thresh = 0.75,
             double dist_thresh = 0.1) 
   {
@@ -102,8 +92,7 @@ public:
         goodFeaturesToTrack(gray, curr_corners, MAX_FEATURES*scale*scale, 0.1, 8, mask, 3, false, 0.04);
         corners.insert(corners.end(), curr_corners.begin(), curr_corners.end());
 
-        cout << "X: " << x <<  "   Y: " << y << endl;
-        cout << "Current corners: " << curr_corners.size() << endl;
+        cout << "Detected corners : " << curr_corners.size() << endl;
       }
     }
     
@@ -141,7 +130,7 @@ public:
       }
     }
     
-    cout << good_matches.size() << endl;
+    cout << "Good Matches     : " << good_matches.size() << endl;
     // Put good matches into each frame 
     int addNew = 0;
     int addOld = 0;
@@ -174,8 +163,8 @@ public:
         curr_frame.pts.push_back(points[prev_frame.pts[prev_frame.kps_idxs[good_matches[i].trainIdx]].id]);
       }
     }
-    cout << "New Points: " << addNew << endl;
-    cout << "Old Points: " << addOld << endl;
+    cout << "New Points       : " << addNew << endl;
+    cout << "Old Points       : " << addOld << endl;
   }
 };
 
@@ -186,6 +175,7 @@ public:
   vector<Frame> frames;
   vector<CocoPoint> points;  
   Extractor extractor = Extractor();
+  Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
 
   void initFirstFrame(Mat &first_frame) 
   {
@@ -206,8 +196,6 @@ public:
       frames[frames.size()-1].pts.push_back(point);
       points.push_back(point);
     }
-    cout << "First frame kps count: " << frames[frames.size()-1].kps.size() << endl;
-    cout << "First frame kps indexes count: " << frames[frames.size()-1].kps_idxs.size() << endl;
   }
   
   void extractAndMatch(Mat &curr_frame)
@@ -228,11 +216,6 @@ public:
     }
     // Match features with previous frame and directly add into Map 
     extractor.matchFeatures(frames, points); 
-   
-    cout << frames[frames.size()-1].pts.size() << endl;
-    cout << frames[frames.size()-1].kps.size() << endl;
-    cout << frames[frames.size()-1].kps_idxs.size() << endl;
-
   }
 
   void display() 
@@ -244,9 +227,9 @@ public:
       circle(image, keypoint.pt, 4, Scalar(0, 255, 0));  
     }
 
-    imshow("Videos", image); 
-    cout << "Total Frames: " << frames.size() << endl;
-    cout << "Total Points: " << points.size() << endl;
+    imshow("Videos", image);  
+    cout << "Total Frames     : " << frames.size() << endl;
+    cout << "Total Points     : " << points.size() << endl;
   }
 };
 
@@ -279,25 +262,22 @@ int main(int argc, char **argv)
     Mat frame;
     cap >> frame;
     if(frame.empty()) break;
+    cout << "******************Frame " << cap.get(CAP_PROP_POS_FRAMES) << "*****************" << endl;
 
     // Feature Extraction using ORB
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-    if(cap.get(CAP_PROP_POS_FRAMES) > 1) 
-    {
-      World.extractAndMatch(frame);  
-    } 
+    if(cap.get(CAP_PROP_POS_FRAMES) > 1) World.extractAndMatch(frame);
     else World.initFirstFrame(frame);
-
-    chrono::steady_clock::time_point end = chrono::steady_clock::now();
-    chrono::duration<double> interval = chrono::duration_cast<chrono::duration<double>>(end - start);
-    cout << "Time used         : " << interval.count() << endl;
       
     // Display
     World.display();
-    //imshow("Videos", frame);
     char c = (char)waitKey(1000/cap.get(CAP_PROP_FPS)); // display according to original fps
     if(c==27) break; // Esc 
+
+    chrono::steady_clock::time_point end = chrono::steady_clock::now();
+    chrono::duration<double> interval = chrono::duration_cast<chrono::duration<double>>(end - start);
+    cout << "Time used        : " << interval.count() << endl;
   }
 
   cap.release();
