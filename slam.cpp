@@ -11,16 +11,36 @@ using namespace std;
 using namespace cv;
 
 
+class CocoPoint 
+{
+public: 
+  int id;
+  vector<double> coord;
+  vector<int> frames_id;
+  vector<int> idxs; // indexes of Point in frame.pts
+
+  CocoPoint(int point_id, int frame_id, int index) {
+    id = point_id;
+    frames_id.push_back(frame_id);
+    idxs.push_back(index);
+  }
+  
+  void addObservation(int frame_id, int index) {
+    frames_id.push_back(frame_id);
+    idxs.push_back(index);
+  }
+};
+
 class Frame 
 {
-  public: 
-    int id;
-    Mat image;
-    vector<KeyPoint> kps; 
-    Mat dps; 
-    vector<int> kps_idxs;
-    //vector<CocoPoint> pts;
-    
+public: 
+  int id;
+  Mat image;
+  vector<KeyPoint> kps; 
+  Mat dps; 
+  vector<CocoPoint> pts;
+  vector<int> kps_idxs;
+  
   Frame(int frame_id, 
       Mat input_image,
       vector<KeyPoint> frame_kps,
@@ -30,57 +50,36 @@ class Frame
     image = input_image;
     kps = frame_kps;
     dps = frame_dps;
-    vector<int> kps_idxs(kps.size());
-    fill(kps_idxs.begin(), kps_idxs.end(), -1);
   }
 
-  //void addPoints(CocoPoint &point, int kps_index, int pts_index) {
-  //  pts.push_back(point); 
-  //  kps_idxs[kps_index] = pts_index; // pts_index is index of pts or pts id
-  void addPoints(int point_id, int kps_index) {
-    kps_idxs[kps_index] = point_id; // pts_index is index of pts or pts id
+  void addPoints(CocoPoint &point, int kps_index, int pts_index) {
+    pts.push_back(point); 
+    kps_idxs[kps_index] = pts_index; // kps_index[i] is the index of a point in pts 
   }
 };
 
-class CocoPoint 
-{
-  public: 
-    int id;
-    vector<double> coord;
-    vector<Frame> frames;
-    vector<int> idxs; // indexes of Point in frame.pts
-  
-  CocoPoint(int point_id, Frame point_in_frames, int index) {
-    id = point_id;
-    frames.push_back(point_in_frames);
-    idxs.push_back(index); 
-  }
-  
-  void addObservation(Frame frame, int index) {
-    frames.push_back(frame);
-    idxs.push_back(index);
-  }
-};
 
 class Extractor 
 {
-  public: 
-    int MAX_FEATURES;
-    double scale;
-    double thresh;
-    double dist_thresh;
+public: 
+  int MAX_FEATURES = 4000;
+  double scale = 1.0;
+  double thresh = 0.75;
+  double dist_thresh = 0.1;
 
-  Extractor (int MAX_FEATURES = 8000, 
-            double scale = 0.25, // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
+  Extractor (int MAX_FEATURES = 4000, 
+            double scale = 1.0, // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
             double thresh = 0.75,
-            double dist_thresh = 0.1) {
+            double dist_thresh = 0.1) 
+  {
     MAX_FEATURES = MAX_FEATURES;
     scale = scale;
     thresh = thresh;
     dist_thresh = dist_thresh;
   }
 
-  void getFeatures(Mat image, vector<KeyPoint> &frame_kps, Mat &frame_dps) {
+  void getFeatures(Mat image, vector<KeyPoint> &frame_kps, Mat &frame_dps) 
+  {
     Ptr<ORB> orb = ORB::create();
     vector<KeyPoint> keypoints; 
     Mat descriptors; 
@@ -93,17 +92,24 @@ class Extractor
     cvtColor(image, gray, CV_BGR2GRAY);
 
     for(size_t y = 0; y < 1/scale; y++)
-    for(size_t x = 0; x < 1/scale; x++) {
-      vector<Point2f> curr_corners;
-      Rect roi = Rect(x*frame_width, y*frame_height, frame_width, frame_height);
-      Mat mask = Mat::zeros(image.size(), CV_8UC1);
-      mask(roi).setTo(Scalar::all(255));
-      goodFeaturesToTrack(gray, curr_corners, MAX_FEATURES*scale*scale, 0.1, 8, mask, 3, false, 0.04);
-      corners.insert(corners.end(), curr_corners.begin(), curr_corners.end());
+    {
+      for(size_t x = 0; x < 1/scale; x++) 
+      {
+        vector<Point2f> curr_corners;
+        Rect roi = Rect(x*frame_width, y*frame_height, frame_width, frame_height);
+        Mat mask = Mat::zeros(image.size(), CV_8UC1);
+        mask(roi).setTo(Scalar::all(255));
+        goodFeaturesToTrack(gray, curr_corners, MAX_FEATURES*scale*scale, 0.1, 8, mask, 3, false, 0.04);
+        corners.insert(corners.end(), curr_corners.begin(), curr_corners.end());
+
+        cout << "X: " << x <<  "   Y: " << y << endl;
+        cout << "Current corners: " << curr_corners.size() << endl;
+      }
     }
     
     // Find keypoints and Compute descriptors
-    for(size_t i = 0; i < corners.size(); i++) {
+    for(size_t i = 0; i < corners.size(); i++) 
+    {
       keypoints.push_back(KeyPoint(corners[i], 20));
     }
 
@@ -112,7 +118,8 @@ class Extractor
     frame_dps = descriptors;
   }
 
-  void matchFeatures(vector<Frame> &frames, vector<CocoPoint> &points) {
+  void matchFeatures(vector<Frame> &frames, vector<CocoPoint> &points) 
+  {
     Frame prev_frame = frames[frames.size()-2];
     Frame curr_frame = frames[frames.size()-1];
     
@@ -123,53 +130,88 @@ class Extractor
 
     // Filter invalid matches 
     vector<DMatch> good_matches;
-    for(size_t i = 0; i < knn_matches.size(); i++) {
-      if(knn_matches[i][0].distance < thresh * knn_matches[i][1].distance) {
-        if(sqrt((curr_frame.kps[knn_matches[i][0].queryIdx].pt.x - prev_frame.kps[knn_matches[i][0].trainIdx].pt.x)*(curr_frame.kps[knn_matches[i][0].queryIdx].pt.x - prev_frame.kps[knn_matches[i][0].trainIdx].pt.x) + (curr_frame.kps[knn_matches[i][0].queryIdx].pt.y - prev_frame.kps[knn_matches[i][0].trainIdx].pt.y)*(curr_frame.kps[knn_matches[i][0].queryIdx].pt.y - prev_frame.kps[knn_matches[i][0].trainIdx].pt.y)) < dist_thresh*sqrt(curr_frame.image.cols*curr_frame.image.cols+curr_frame.image.rows*curr_frame.image.rows)) {
+    for(size_t i = 0; i < knn_matches.size(); i++) 
+    {
+      if(knn_matches[i][0].distance < thresh * knn_matches[i][1].distance) 
+      {
+        if(sqrt((curr_frame.kps[knn_matches[i][0].queryIdx].pt.x - prev_frame.kps[knn_matches[i][0].trainIdx].pt.x)*(curr_frame.kps[knn_matches[i][0].queryIdx].pt.x - prev_frame.kps[knn_matches[i][0].trainIdx].pt.x) + (curr_frame.kps[knn_matches[i][0].queryIdx].pt.y - prev_frame.kps[knn_matches[i][0].trainIdx].pt.y)*(curr_frame.kps[knn_matches[i][0].queryIdx].pt.y - prev_frame.kps[knn_matches[i][0].trainIdx].pt.y)) < dist_thresh*sqrt(curr_frame.image.cols*curr_frame.image.cols+curr_frame.image.rows*curr_frame.image.rows)) 
+        {
           good_matches.push_back(knn_matches[i][0]);
         }
       }
     }
-     
+    
+    cout << good_matches.size() << endl;
     // Put good matches into each frame 
-    for(size_t i = 0; i < good_matches.size(); i++) {
-      if(prev_frame.kps_idxs[good_matches[i].trainIdx] == -1) {
-        points.push_back(CocoPoint(points.size(), prev_frame, good_matches[i].trainIdx));
-        points[points.size()-1].addObservation(curr_frame, good_matches[i].queryIdx);
-        prev_frame.addPoints(points.size()-1, good_matches[i].trainIdx);
-        curr_frame.addPoints(points.size()-1, good_matches[i].queryIdx);
-      } else {
-        points[prev_frame.kps_idxs[good_matches[i].trainIdx]].addObservation(curr_frame, good_matches[i].queryIdx);
+    int addNew = 0;
+    int addOld = 0;
+    for(size_t i = 0; i < good_matches.size(); i++) 
+    {
+      if(prev_frame.kps_idxs[good_matches[i].trainIdx] == -1) 
+      {
+        addNew++;
+        CocoPoint point = CocoPoint(points.size(), prev_frame.id, good_matches[i].trainIdx);
+        points.push_back(point);
+
+        // put the index of the point in frame.pts into frame.kps_idxs and point.idxs
+        frames[frames.size()-2].kps_idxs[good_matches[i].trainIdx] = frames[frames.size()-2].pts.size();
+        frames[frames.size()-1].kps_idxs[good_matches[i].queryIdx] = frames[frames.size()-1].pts.size();
+        points[points.size()-1].idxs.push_back(frames[frames.size()-2].pts.size()-1);
+        points[points.size()-1].idxs.push_back(frames[frames.size()-1].pts.size()-1);
+
+        // append the point into the frame.pts
+        frames[frames.size()-2].pts.push_back(point);
+        frames[frames.size()-1].pts.push_back(point);
+
+        // put the frame id into the point.frames_id
+        points[points.size()-1].frames_id.push_back(frames[frames.size()-2].id);
+        points[points.size()-1].frames_id.push_back(frames[frames.size()-1].id);
+      } 
+      else 
+      {
+        addOld++;
+        curr_frame.kps_idxs[good_matches[i].queryIdx] = curr_frame.pts.size();
+        curr_frame.pts.push_back(points[prev_frame.pts[prev_frame.kps_idxs[good_matches[i].trainIdx]].id]);
       }
     }
+    cout << "New Points: " << addNew << endl;
+    cout << "Old Points: " << addOld << endl;
   }
 };
 
 
-class Map {
-  public:
-    vector<Frame> frames;
-    vector<CocoPoint> points;  
-    Extractor extractor = Extractor();
+class Map
+{
+public:
+  vector<Frame> frames;
+  vector<CocoPoint> points;  
+  Extractor extractor = Extractor();
 
-  Map() {
-    Extractor extractor = Extractor();
-    vector<Frame> frames;
-    vector<Point> points;  
-  }
-
-  void initFirstFrame(Mat first_frame) {
+  void initFirstFrame(Mat &first_frame) 
+  {
     vector<KeyPoint> keypoints; 
-    Mat descriptors; 
+    Mat descriptors;
     
     // Find and draw features
     extractor.getFeatures(first_frame, keypoints, descriptors);
 
     // Put first frame into frames
-    frames.push_back(Frame(frames.size(), first_frame, keypoints, descriptors));
+    Frame frame = Frame(frames.size(), first_frame, keypoints, descriptors);
+    frames.push_back(frame);
+
+    for(size_t i = 0; i < frames[frames.size()-1].kps.size(); i++) 
+    {
+      CocoPoint point  = CocoPoint(points.size(), frames.size(), i);
+      frames[frames.size()-1].kps_idxs.push_back(i);
+      frames[frames.size()-1].pts.push_back(point);
+      points.push_back(point);
+    }
+    cout << "First frame kps count: " << frames[frames.size()-1].kps.size() << endl;
+    cout << "First frame kps indexes count: " << frames[frames.size()-1].kps_idxs.size() << endl;
   }
   
-  void extractAndMatch(Mat curr_frame) {
+  void extractAndMatch(Mat &curr_frame)
+  {
     vector<KeyPoint> keypoints; 
     Mat descriptors; 
 
@@ -177,46 +219,62 @@ class Map {
     extractor.getFeatures(curr_frame, keypoints, descriptors);
 
     // Put current frame into frames
-    frames.push_back(Frame(frames.size(), curr_frame, keypoints, descriptors));
+    Frame frame = Frame(frames.size(), curr_frame, keypoints, descriptors);
+    frames.push_back(frame);
 
+    for(size_t i = 0; i < frames[frames.size()-1].kps.size(); i++) 
+    {
+      frames[frames.size()-1].kps_idxs.push_back(-1);
+    }
     // Match features with previous frame and directly add into Map 
     extractor.matchFeatures(frames, points); 
+   
+    cout << frames[frames.size()-1].pts.size() << endl;
+    cout << frames[frames.size()-1].kps.size() << endl;
+    cout << frames[frames.size()-1].kps_idxs.size() << endl;
+
   }
 
-  void display() {
+  void display() 
+  {
     Mat image; 
     image = frames[frames.size()-1].image.clone();
-    for(auto keypoint : frames[frames.size()-1].kps) {
+    for(auto keypoint : frames[frames.size()-1].kps) 
+    {
       circle(image, keypoint.pt, 4, Scalar(0, 255, 0));  
     }
 
     imshow("Videos", image); 
-    cout << "Total Frames: " << frames.size();
-    cout << "Total Points: " << points.size();
+    cout << "Total Frames: " << frames.size() << endl;
+    cout << "Total Points: " << points.size() << endl;
   }
 };
 
 
 
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv) 
+{
 
   // Check input
-  if(argv[1] == nullptr) {
+  if(argv[1] == nullptr) 
+  {
     cerr << "./slam <Video.mp4>" << endl;
     return -1;
   }
 
   // Check video type
   VideoCapture cap(argv[1]);
-  if(!cap.isOpened()){
+  if(!cap.isOpened())
+  {
     cerr << "Error opening video stream or file." << endl;
     return -1;
   }
 
   Map World = Map(); 
 
-  while(1) {
+  while(1) 
+  {
     // Load frame from video
     Mat frame;
     cap >> frame;
@@ -225,9 +283,11 @@ int main(int argc, char **argv) {
     // Feature Extraction using ORB
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-    if(cap.get(CAP_PROP_POS_FRAMES) > 1) {
+    if(cap.get(CAP_PROP_POS_FRAMES) > 1) 
+    {
       World.extractAndMatch(frame);  
-    } else World.initFirstFrame(frame);
+    } 
+    else World.initFirstFrame(frame);
 
     chrono::steady_clock::time_point end = chrono::steady_clock::now();
     chrono::duration<double> interval = chrono::duration_cast<chrono::duration<double>>(end - start);
@@ -235,6 +295,7 @@ int main(int argc, char **argv) {
       
     // Display
     World.display();
+    //imshow("Videos", frame);
     char c = (char)waitKey(1000/cap.get(CAP_PROP_FPS)); // display according to original fps
     if(c==27) break; // Esc 
   }
