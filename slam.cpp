@@ -272,43 +272,94 @@ public:
     cout << "Total Frames     : " << frames.size() << "\n";
     cout << "Total Points     : " << points.size() << "\n";
   }
-
-  static void display3D() 
-  {
-    pangolin::BindToContext("3d View");
-
-    glEnable(GL_DEPTH_TEST);
-
-    // Define Projection and initial ModelView matrix
-    pangolin::OpenGlRenderState s_cam(
-      pangolin::ProjectionMatrix(640,480,420,420,320,240,0.2,100),
-      pangolin::ModelViewLookAt(-2,2,-2, 0,0,0, pangolin::AxisY)
-    );
-
-    // Create Interactive View in window
-    pangolin::Handler3D handler(s_cam);
-    pangolin::View& d_cam = pangolin::CreateDisplay()
-            .SetBounds(0.0, 1.0, 0.0, 1.0, -640.0f/480.0f)
-            .SetHandler(&handler);
-
-    while( !pangolin::ShouldQuit() )
-    {
-      // Clear screen and activate view to render into
-      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-      d_cam.Activate(s_cam);
-
-      // Render OpenGL Cube
-      pangolin::glDrawColouredCube();
-
-      // Swap frames and Process Events
-      pangolin::FinishFrame();
-    }
-
-  pangolin::GetBoundWindow()->RemoveCurrent();
-  } 
 };
 
+void display3D() 
+{
+  pangolin::BindToContext("3d View");
+  glEnable(GL_DEPTH_TEST);
 
+  // Define Projection and initial ModelView matrix
+  pangolin::OpenGlRenderState s_cam(
+    pangolin::ProjectionMatrix(640,480,420,420,320,240,0.2,100),
+    pangolin::ModelViewLookAt(-2,2,-2, 0,0,0, pangolin::AxisY)
+  );
+
+  // Create Interactive View in window
+  pangolin::Handler3D handler(s_cam);
+  pangolin::View& d_cam = pangolin::CreateDisplay()
+          .SetBounds(0.0, 1.0, 0.0, 1.0, -640.0f/480.0f)
+          .SetHandler(&handler);
+  
+  while( !pangolin::ShouldQuit() )
+  {
+    // Clear screen and activate view to render into
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    d_cam.Activate(s_cam);
+
+    /***
+    float w=1.0;
+    float h_ratio=0.75;
+    float z_ratio=0.6;
+    float h = w * h_ratio;
+    float z = w * z_ratio;
+
+    for (ssize_t i = 0; i < frames.size(); ++i) {
+
+      Mat pose = frames[i].pose;
+
+      Mat cvToGl = Mat::zeros(4, 4, CV_64F);
+      cvToGl.at<double>(0, 0) = 1.0f;
+      cvToGl.at<double>(1, 1) = -1.0f; // Invert the y axis
+      cvToGl.at<double>(2, 2) = -1.0f; // invert the z axis
+      cvToGl.at<double>(3, 3) = 1.0f;
+      pose = cvToGl * pose;
+
+      Mat glPoseMatrix = Mat::zeros(4, 4, CV_64F);
+      transpose(pose, glPoseMatrix);
+      glMatrixMode(GL_MODELVIEW);
+      glLoadMatrixd(&glPoseMatrix.at<double>(0, 0));
+      
+      glMultTransposeMatrixd(glPoseMatrix);
+
+      glPushMatrix();
+
+      glBegin(GL_LINES);
+      glVertex3f(0,0,0);
+      glVertex3f(w,h,z);
+      glVertex3f(0,0,0);
+      glVertex3f(w,-h,z);
+      glVertex3f(0,0,0);
+      glVertex3f(-w,-h,z);
+      glVertex3f(0,0,0);
+      glVertex3f(-w,h,z);
+
+      glVertex3f(w,h,z);
+      glVertex3f(w,-h,z);
+
+      glVertex3f(-w,h,z);
+      glVertex3f(-w,-h,z);
+
+      glVertex3f(-w,h,z);
+      glVertex3f(w,h,z);
+
+      glVertex3f(-w,-h,z);
+      glVertex3f(w,-h,z);
+      glEnd();
+
+      glPopMatrix();
+    }  
+    ***/
+
+  // Render OpenGL Cube
+  pangolin::glDrawColouredCube();
+
+  // Swap frames and Process Events
+  pangolin::FinishFrame();
+  }
+
+  pangolin::GetBoundWindow()->RemoveCurrent();
+}
 
 
 int main(int argc, char **argv) 
@@ -335,8 +386,8 @@ int main(int argc, char **argv)
   glEnable(GL_DEPTH_TEST);
   pangolin::GetBoundWindow()->RemoveCurrent();
 
-  thread render(&Map::display3D);
-
+  thread render(display3D);
+    
   while(1) 
   {
     // Load frame from video
@@ -357,6 +408,7 @@ int main(int argc, char **argv)
       
     // Display
     World.displayVideo();
+
     char c = (char)waitKey(1000/cap.get(CAP_PROP_FPS)); // display according to original fps
     if(c==27) break; // Esc 
 
