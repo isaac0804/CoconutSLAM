@@ -5,7 +5,9 @@
 #include <opencv2/core/core.hpp> 
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <thread>
 
+#include <pangolin/pangolin.h>
 
 using namespace std;
 using namespace cv;
@@ -235,35 +237,29 @@ public:
 
     Mat fundamental_matrix;
     fundamental_matrix = findFundamentalMat(curr_points, prev_points, CV_FM_8POINT);
-    cout << "Fundamental Matrix : \n"<< fundamental_matrix << "\n";
 
     Point2d principal_point(K.at<double>(0, 2), K.at<double>(1, 2));
     double focal_length = K.at<double>(1, 1);
     Mat essential_matrix;
 
     essential_matrix = findEssentialMat(curr_points, prev_points, focal_length, principal_point);
-    cout << "Essential Matrix : \n" << essential_matrix << "\n";
 
     Mat R;
     Mat t; 
     recoverPose(essential_matrix, curr_points, prev_points, R, t, focal_length, principal_point);
-    cout << "Rotation Matrix :\n" << R << "\n";
-    cout << "Translation Vector : \n" << t << "\n";
     
     Mat T;
     Mat btm = (Mat_<double>(1, 4) << 0.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00);
     hconcat(R, t, T);
     vconcat(T, btm, T);
     T.convertTo(T, CV_64F);
-    cout << "Transformation Matrix: \n" << T << "\n";
 
-    //frames[frames.size()-1].pose = frames[frames.size()-2].pose.mul(T);
-    //frames[frames.size()-1].pose = T.mul(frames[frames.size()-2].pose);
     frames[frames.size()-1].pose = T*frames[frames.size()-2].pose;
   }
 
-  void display() 
+  void displayVideo() 
   {
+
     Mat image; 
     image = frames[frames.size()-1].image.clone();
     for(auto keypoint : frames[frames.size()-1].kps) 
@@ -272,10 +268,44 @@ public:
     }
 
     imshow("Videos", image);  
-    cout << "Current Pose     : " << frames[frames.size()-1].pose << "\n";
+    cout << "Current Pose     : \n" << frames[frames.size()-1].pose << "\n";
     cout << "Total Frames     : " << frames.size() << "\n";
     cout << "Total Points     : " << points.size() << "\n";
   }
+
+  static void display3D() 
+  {
+    pangolin::BindToContext("3d View");
+
+    glEnable(GL_DEPTH_TEST);
+
+    // Define Projection and initial ModelView matrix
+    pangolin::OpenGlRenderState s_cam(
+      pangolin::ProjectionMatrix(640,480,420,420,320,240,0.2,100),
+      pangolin::ModelViewLookAt(-2,2,-2, 0,0,0, pangolin::AxisY)
+    );
+
+    // Create Interactive View in window
+    pangolin::Handler3D handler(s_cam);
+    pangolin::View& d_cam = pangolin::CreateDisplay()
+            .SetBounds(0.0, 1.0, 0.0, 1.0, -640.0f/480.0f)
+            .SetHandler(&handler);
+
+    while( !pangolin::ShouldQuit() )
+    {
+      // Clear screen and activate view to render into
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      d_cam.Activate(s_cam);
+
+      // Render OpenGL Cube
+      pangolin::glDrawColouredCube();
+
+      // Swap frames and Process Events
+      pangolin::FinishFrame();
+    }
+
+  pangolin::GetBoundWindow()->RemoveCurrent();
+  } 
 };
 
 
@@ -300,6 +330,12 @@ int main(int argc, char **argv)
   }
 
   Map World = Map(); 
+  
+  pangolin::CreateWindowAndBind("3d View", 640, 480);
+  glEnable(GL_DEPTH_TEST);
+  pangolin::GetBoundWindow()->RemoveCurrent();
+
+  thread render(&Map::display3D);
 
   while(1) 
   {
@@ -320,7 +356,7 @@ int main(int argc, char **argv)
     else World.initFirstFrame(frame);
       
     // Display
-    World.display();
+    World.displayVideo();
     char c = (char)waitKey(1000/cap.get(CAP_PROP_FPS)); // display according to original fps
     if(c==27) break; // Esc 
 
@@ -333,4 +369,3 @@ int main(int argc, char **argv)
   destroyAllWindows();
   return 0; 
 }
-
