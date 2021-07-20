@@ -282,7 +282,7 @@ void display3D(Map &world)
   // Define Projection and initial ModelView matrix
   pangolin::OpenGlRenderState s_cam(
     pangolin::ProjectionMatrix(1024,768,420,420,512,389,0.1,1000),
-    pangolin::ModelViewLookAt(0, 10, 30, 0,0,0, 0.0,10.0,0.0)
+    pangolin::ModelViewLookAt(0, 10, -10, 0,0,0, 0.0,1.0,0.0)
   );
 
   // Create Interactive View in window
