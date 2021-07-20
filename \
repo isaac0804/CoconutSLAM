@@ -57,13 +57,13 @@ public:
 class Extractor 
 {
 public: 
-  int MAX_FEATURES = 3000;
-  double scale = 1.0; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
+  int MAX_FEATURES = 2000;
+  double scale = 0.5; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
   double thresh = 0.75;
   double dist_thresh = 0.1;
 
-  Extractor (int MAX_FEATURES = 3000, 
-            double scale = 1.0,
+  Extractor (int MAX_FEATURES = 2000, 
+            double scale = 0.5,
             double thresh = 0.75,
           double dist_thresh = 0.1) 
   {
@@ -94,7 +94,7 @@ public:
         Rect roi = Rect(x*frame_width, y*frame_height, frame_width, frame_height);
         Mat mask = Mat::zeros(image.size(), CV_8UC1);
         mask(roi).setTo(Scalar::all(255));
-        goodFeaturesToTrack(gray, curr_corners, MAX_FEATURES*scale*scale, 0.1, 8, mask, 3, false, 0.04);
+        goodFeaturesToTrack(gray, curr_corners, MAX_FEATURES*scale*scale, 0.1, 1, mask, 5, false, 0.04);
         corners.insert(corners.end(), curr_corners.begin(), curr_corners.end());
       }
     }
@@ -119,7 +119,7 @@ public:
     // Match keypoints based on descriptors
     BFMatcher matcher;
     vector<vector<DMatch>> knn_matches;
-    matcher.knnMatch(curr_frame.dps, prev_frame.dps, knn_matches, 8);
+    matcher.knnMatch(curr_frame.dps, prev_frame.dps, knn_matches, 2);
 
     // Filter invalid matches 
     vector<DMatch> good_matches;
@@ -173,7 +173,6 @@ public:
   Extractor extractor = Extractor();
   Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
   Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
-  double lowest_z = 0.0;
 
   void initFirstFrame(Mat &first_frame) 
   {
@@ -288,7 +287,6 @@ public:
     
     //frames[frames.size()-1].pose = frames[frames.size()-2].pose*T;
     frames[frames.size()-1].pose = T*frames[frames.size()-2].pose;
-    lowest_z = min(lowest_z, frames[frames.size()-1].pose.at<double>(2,3));
   }
 
   void displayVideo() 
@@ -320,12 +318,10 @@ public:
     Mat T2 = curr_frame.pose.rowRange(0, 3).clone();
 
     vector<Point2f> pts_1, pts_2;
-    vector<int> ids;
     for(size_t i = 0; i < curr_frame.kps.size(); i++) 
     {
       if(curr_frame.pts_id[i] != -1)
       {
-        ids.push_back(curr_frame.pts_id[i]);
         pts_1.push_back(points[curr_frame.pts_id[i]].coords[points[curr_frame.pts_id[i]].coords.size()-2]);
         pts_2.push_back(points[curr_frame.pts_id[i]].coords[points[curr_frame.pts_id[i]].coords.size()-1]);
       }
@@ -341,14 +337,24 @@ public:
     {
       Mat temp = pts_4d.col(i);
       temp = temp / temp.at<float>(3,0);
-      Point3d p(
-          temp.at<float>(0,0),
-          temp.at<float>(1,0),
-          temp.at<float>(2,0)
-      );
-      if(temp.at<float>(2,0) > lowest_z or temp.at<float>(1,0) < 0.5)
+      if(temp.at<float>(2,0) < frames[frames.size()-1].pose.at<float>(2,3))
       {
-        points[ids[i]].loc.push_back(p);
+        Point3d p(
+            temp.at<float>(0,0),
+            temp.at<float>(1,0),
+            temp.at<float>(2,0)
+        );
+        toBeAddedPoints.push_back(p);
+      }
+    }
+    for(size_t i = 0; i < curr_frame.kps.size(); i++) 
+    {
+      if(curr_frame.pts_id[i] != -1)
+      {
+        if(points[curr_frame.pts_id[i]].loc.size() == 0 )
+        {
+          points[curr_frame.pts_id[i]].loc.push_back(toBeAddedPoints[i]);
+        }
       }
     }
   }
@@ -462,7 +468,7 @@ void display3D(Map &world)
     }  
     for (size_t i = 0; i < world.points.size(); i++)
     {
-      if(world.points[i].loc.size() < 2) 
+      if(world.points[i].loc.size() > 2) 
       {
         continue;
       }
@@ -495,15 +501,15 @@ void display3D(Map &world)
       x /= world.points[i].loc.size();
       y /= world.points[i].loc.size();
       z /= world.points[i].loc.size();
-      if(isnan(x) or isnan(y) or isnan(z)) continue;
-      //if(z > 0)
-      //{
-      glVertex3d(x, y, z);
-      //}
-      //else
-      //{
-      //glVertex3d(x, y, -z);
-      //}
+      if(isnan(z)) continue;
+      if(z > 0)
+      {
+        glVertex3d(x, y, z);
+      }
+      else
+      {
+        glVertex3d(x, y, -z);
+      }
       glEnd();
 
       glPopMatrix();
@@ -537,8 +543,8 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  //Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
-  //Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
+  Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
+  Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
   Map World = Map(); 
   
   pangolin::CreateWindowAndBind("3d View", 1024, 768);
@@ -559,8 +565,8 @@ int main(int argc, char **argv)
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
 
-    //Mat temp = frame.clone();
-    //undistort(temp, frame, K, dist);
+    Mat temp = frame.clone();
+    undistort(temp, frame, K, dist);
     if(cap.get(CAP_PROP_POS_FRAMES) > 1) 
     {
       World.extractAndMatch(frame);
