@@ -21,7 +21,7 @@ class CocoPoint
 public: 
   int id;
   vector<Point2f> coords;
-  Point3d loc = Point3d(0,0,0);
+  vector<Point3d> loc;
   vector<int> frames_id;
 
   CocoPoint(int point_id, int frame_id, Point2f coord) {
@@ -57,13 +57,13 @@ public:
 class Extractor 
 {
 public: 
-  int MAX_FEATURES = 8000;
-  double scale = 0.5; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
+  int MAX_FEATURES = 2000;
+  double scale = 1.0; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
   double thresh = 0.75;
   double dist_thresh = 0.1;
 
-  Extractor (int MAX_FEATURES = 8000, 
-            double scale = 0.5,
+  Extractor (int MAX_FEATURES = 2000, 
+            double scale = 1.0,
             double thresh = 0.75,
           double dist_thresh = 0.1) 
   {
@@ -147,7 +147,6 @@ public:
         points.push_back(point);
         points[points.size()-1].frames_id.push_back(curr_frame.id);
         points[points.size()-1].coords.push_back(curr_frame.kps[good_matches[i].queryIdx].pt);
-        //temp_pts_id.push_back(points.size()-1);
         curr_frame.pts_id[i] = (points.size()-1);
       } 
       else 
@@ -155,7 +154,6 @@ public:
         addOld++;
         points[prev_frame.pts_id[good_matches[i].trainIdx]].frames_id.push_back(curr_frame.id);
         points[prev_frame.pts_id[good_matches[i].trainIdx]].coords.push_back(curr_frame.kps[good_matches[i].queryIdx].pt);
-        //temp_pts_id.push_back(prev_frame.pts_id[good_matches[i].trainIdx]);
         curr_frame.pts_id[i] = (prev_frame.pts_id[good_matches[i].trainIdx]);
       }
     }
@@ -242,13 +240,17 @@ public:
 
     Point2d principal_point(K.at<double>(0, 2), K.at<double>(1, 2));
     double focal_length = K.at<double>(1, 1);
+    //Point2d principal_point(9.842439e+02, 2.331966e+02);
+    //double focal_length = 9.808141e+02;
     Mat essential_matrix;
 
-    essential_matrix = findEssentialMat(curr_points, prev_points, focal_length, principal_point);
+    essential_matrix = findEssentialMat(prev_points, curr_points, focal_length, principal_point);
+    //essential_matrix = findEssentialMat(curr_points, prev_points, focal_length, principal_point);
 
     Mat R;
     Mat t; 
-    recoverPose(essential_matrix, curr_points, prev_points, R, t, focal_length, principal_point);
+    recoverPose(essential_matrix, prev_points, curr_points, R, t, focal_length, principal_point);
+    //recoverPose(essential_matrix, curr_points, prev_points, R, t, focal_length, principal_point);
     
     Mat T;
     Mat btm = (Mat_<double>(1, 4) << 0.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00);
@@ -256,6 +258,31 @@ public:
     vconcat(T, btm, T);
     T.convertTo(T, CV_64F);
 
+    //Mat t_x = (Mat_<double>(3, 3) << 0, -t.at<double>(2, 0), t.at<double>(1, 0),
+    //    t.at<double>(2, 0), 0, -t.at<double>(0, 0),
+    //    -t.at<double>(1, 0), t.at<double>(0, 0), 0);
+    //cout << "t^R=" << endl << t_x * R << endl;
+
+    //for(size_t i = 0; i < frames[frames.size()-1].pts_id.size(); i++)
+    //{
+    //  if(frames[frames.size()-1].pts_id[i] != -1)
+    //  {
+    //    for(size_t j = 0; j < points[frames[frames.size()-1].pts_id[i]].frames_id.size(); j++)
+    //    {
+    //      if(points[frames[frames.size()-1].pts_id[i]].frames_id[j] == frames.size()-2) 
+    //      {
+    //        Point2d pt1 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-1];
+    //        Mat y1 = (Mat_<double>(3, 1) << pt1.x, pt1.y, 1);
+    //        Point2d pt2 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-2];
+    //        Mat y2 = (Mat_<double>(3, 1) << pt2.x, pt2.y, 1);
+    //        Mat d = y2.t() * t_x * R * y1;
+    //        cout << "epipolar constraint" << d << endl; 
+    //      }
+    //    }
+    //  }
+    //}
+    
+    //frames[frames.size()-1].pose = frames[frames.size()-2].pose*T;
     frames[frames.size()-1].pose = T*frames[frames.size()-2].pose;
   }
 
@@ -270,7 +297,7 @@ public:
     }
 
     imshow("Videos", image);  
-    cout << "Current Pose     : \n" << frames[frames.size()-1].pose.size() << "\n";
+    cout << "Pose             : \n" << frames[frames.size()-1].pose << "\n";
     cout << "Total Frames     : " << frames.size() << "\n";
     cout << "Total Points     : " << points.size() << "\n";
   }
@@ -290,7 +317,7 @@ public:
     vector<Point2f> pts_1, pts_2;
     for(size_t i = 0; i < curr_frame.kps.size(); i++) 
     {
-      if(curr_frame.pts_id[i] != -1  && points[curr_frame.pts_id[i]].loc == Point3d(0,0,0))
+      if(curr_frame.pts_id[i] != -1)
       {
         pts_1.push_back(points[curr_frame.pts_id[i]].coords[points[curr_frame.pts_id[i]].coords.size()-2]);
         pts_2.push_back(points[curr_frame.pts_id[i]].coords[points[curr_frame.pts_id[i]].coords.size()-1]);
@@ -301,6 +328,7 @@ public:
 
     Mat pts_4d;
     triangulatePoints(T1, T2, pts_1, pts_2, pts_4d);
+    vector<Point3d> toBeAddedPoints;
 
     for(size_t i = 0; i < pts_4d.cols; i++)
     {
@@ -311,10 +339,25 @@ public:
           temp.at<float>(1,0),
           temp.at<float>(2,0)
       );
-      points[curr_frame.pts_id[i]].loc = p;
+      toBeAddedPoints.push_back(p);
+    }
+    for(size_t i = 0; i < curr_frame.kps.size(); i++) 
+    {
+      if(curr_frame.pts_id[i] != -1)
+      {
+        if(points[curr_frame.pts_id[i]].loc.size() == 0 )
+        {
+          points[curr_frame.pts_id[i]].loc.push_back(toBeAddedPoints[i]);
+        }
+        else
+        {
+          points[curr_frame.pts_id[i]].loc.push_back(toBeAddedPoints[i]);
+        }
+      }
     }
   }
 };
+    
 
 void display3D(Map &world) 
 {
@@ -324,7 +367,7 @@ void display3D(Map &world)
   // Define Projection and initial ModelView matrix
   pangolin::OpenGlRenderState s_cam(
     pangolin::ProjectionMatrix(1024,768,420,420,512,389,0.1,1000),
-    pangolin::ModelViewLookAt(0, 10, -10, 0,0,0, 0.0,1.0,0.0)
+    pangolin::ModelViewLookAt(0, -100, -0.1, 0,0,0, pangolin::AxisNegY)
   );
 
   // Create Interactive View in window
@@ -370,8 +413,7 @@ void display3D(Map &world)
       Mat twc(3, 1, CV_64F);
       
       Rwc = pose.rowRange(0, 3).colRange(0, 3).t();
-      //twc = -Rwc*pose.rowRange(0, 3).col(3);
-      twc = Rwc*pose.rowRange(0, 3).col(3);
+      twc = -Rwc*pose.rowRange(0, 3).col(3);
 
       Twc.m[0] = Rwc.at<double>(0,0);
       Twc.m[1] = Rwc.at<double>(1,0);
@@ -397,6 +439,7 @@ void display3D(Map &world)
       glMultMatrixd(Twc.m);
 
       glBegin(GL_LINES);
+      glColor3f(0.0,0.0,1.0);
       glVertex3f(0,0,0);
       glVertex3f(w,h,z);
       glVertex3f(0,0,0);
@@ -423,7 +466,7 @@ void display3D(Map &world)
     }  
     for (size_t i = 0; i < world.points.size(); i++)
     {
-      if(world.points[i].loc == Point3d(0,0,0))
+      if(world.points[i].loc.size() > 3)
       {
         continue;
       }
@@ -433,20 +476,32 @@ void display3D(Map &world)
       glPushMatrix();
       glMultMatrixd(Twc.m);
 
-      glPointSize(10);
+      glPointSize(1.5);
       glBegin(GL_POINTS);
       glColor3f(1.0,0.0,0.0);
-      glVertex3d(world.points[i].loc.x, world.points[i].loc.y, world.points[i].loc.z);
+      double x = 0; 
+      double y = 0; 
+      double z = 0; 
+      for(size_t j = 0; j < world.points[i].loc.size(); j++)
+      {
+        x += world.points[i].loc[j].x;
+        y += world.points[i].loc[j].y;
+        z += world.points[i].loc[j].z;
+      }
+      x /= world.points[i].loc.size();
+      y /= world.points[i].loc.size();
+      z /= world.points[i].loc.size();
+      glVertex3d(x, y, z);
       glEnd();
 
       glPopMatrix();
-      cout << "Drawing point " << i << endl;
-      cout << world.points[i].loc.x << "\n" << world.points[i].loc.y << "\n" << world.points[i].loc.z << endl;
+      //cout << "Drawing point " << i << endl;
+      //cout << world.points[i].loc.x << "\n" << world.points[i].loc.y << "\n" << world.points[i].loc.z << endl;
     }
 
   // Render OpenGL Cube
-  pangolin::glDrawColouredCube();
-  pangolin::glDrawAxis(3);
+  //pangolin::glDrawColouredCube();
+  //pangolin::glDrawAxis(3);
 
   // Swap frames and Process Events
   pangolin::FinishFrame();
@@ -476,8 +531,8 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
-  Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
+  //Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
+  //Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
   Map World = Map(); 
   
   pangolin::CreateWindowAndBind("3d View", 1024, 768);
@@ -498,15 +553,15 @@ int main(int argc, char **argv)
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
 
-    Mat image; 
-    undistort(frame, image, K, dist);
+    //Mat temp = frame.clone();
+    //undistort(temp, frame, K, dist);
     if(cap.get(CAP_PROP_POS_FRAMES) > 1) 
     {
-      World.extractAndMatch(image);
+      World.extractAndMatch(frame);
       World.estimatePose();
       World.triangulate();
     }
-    else World.initFirstFrame(image);
+    else World.initFirstFrame(frame);
       
     // Display
     World.displayVideo();
