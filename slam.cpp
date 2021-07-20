@@ -58,12 +58,12 @@ class Extractor
 {
 public: 
   int MAX_FEATURES = 2000;
-  double scale = 1.0; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
+  double scale = 0.5; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
   double thresh = 0.75;
   double dist_thresh = 0.1;
 
   Extractor (int MAX_FEATURES = 2000, 
-            double scale = 1.0,
+            double scale = 0.5,
             double thresh = 0.75,
           double dist_thresh = 0.1) 
   {
@@ -94,7 +94,7 @@ public:
         Rect roi = Rect(x*frame_width, y*frame_height, frame_width, frame_height);
         Mat mask = Mat::zeros(image.size(), CV_8UC1);
         mask(roi).setTo(Scalar::all(255));
-        goodFeaturesToTrack(gray, curr_corners, MAX_FEATURES*scale*scale, 0.1, 8, mask, 3, false, 0.04);
+        goodFeaturesToTrack(gray, curr_corners, MAX_FEATURES*scale*scale, 0.1, 1, mask, 5, false, 0.04);
         corners.insert(corners.end(), curr_corners.begin(), curr_corners.end());
       }
     }
@@ -135,6 +135,7 @@ public:
     }
     
     cout << "Good Matches     : " << good_matches.size() << "\n";
+
     // Put good matches into each frame 
     int addNew = 0;
     int addOld = 0;
@@ -143,18 +144,18 @@ public:
       if(prev_frame.pts_id[good_matches[i].trainIdx] == -1) 
       {
         addNew++;
-        CocoPoint point = CocoPoint(points.size(), prev_frame.id, prev_frame.kps[good_matches[i].trainIdx].pt);
+        CocoPoint point = CocoPoint(points.size(), frames.size()-2, prev_frame.kps[good_matches[i].trainIdx].pt);
         points.push_back(point);
         points[points.size()-1].frames_id.push_back(curr_frame.id);
         points[points.size()-1].coords.push_back(curr_frame.kps[good_matches[i].queryIdx].pt);
-        curr_frame.pts_id[i] = (points.size()-1);
+        curr_frame.pts_id[good_matches[i].queryIdx] = points.size()-1;
       } 
       else 
       {
         addOld++;
         points[prev_frame.pts_id[good_matches[i].trainIdx]].frames_id.push_back(curr_frame.id);
         points[prev_frame.pts_id[good_matches[i].trainIdx]].coords.push_back(curr_frame.kps[good_matches[i].queryIdx].pt);
-        curr_frame.pts_id[i] = (prev_frame.pts_id[good_matches[i].trainIdx]);
+        curr_frame.pts_id[good_matches[i].queryIdx] = prev_frame.pts_id[good_matches[i].trainIdx];
       }
     }
 
@@ -175,6 +176,8 @@ public:
 
   void initFirstFrame(Mat &first_frame) 
   {
+    points.reserve(1000000);  
+
     vector<KeyPoint> keypoints; 
     Mat descriptors;
     Mat pose = Mat::eye(4, 4, CV_64F);
@@ -349,10 +352,6 @@ public:
         {
           points[curr_frame.pts_id[i]].loc.push_back(toBeAddedPoints[i]);
         }
-        else
-        {
-          points[curr_frame.pts_id[i]].loc.push_back(toBeAddedPoints[i]);
-        }
       }
     }
   }
@@ -466,10 +465,11 @@ void display3D(Map &world)
     }  
     for (size_t i = 0; i < world.points.size(); i++)
     {
-      if(world.points[i].loc.size() > 3)
+      if(world.points[i].loc.size() > 1) 
       {
         continue;
       }
+
       pangolin::OpenGlMatrix Twc;
       Twc.SetIdentity();
     
@@ -478,7 +478,14 @@ void display3D(Map &world)
 
       glPointSize(1.5);
       glBegin(GL_POINTS);
-      glColor3f(1.0,0.0,0.0);
+      glColor3f(0.5,1.0,1.0);
+      for(size_t j = 0; j < world.points[i].frames_id.size(); j++)
+      {
+        if(world.points[i].frames_id[j] == world.frames.size()-1)
+        {
+          glColor3f(1.0,0.2,0.0);
+        }
+      }
       double x = 0; 
       double y = 0; 
       double z = 0; 
@@ -495,13 +502,7 @@ void display3D(Map &world)
       glEnd();
 
       glPopMatrix();
-      //cout << "Drawing point " << i << endl;
-      //cout << world.points[i].loc.x << "\n" << world.points[i].loc.y << "\n" << world.points[i].loc.z << endl;
     }
-
-  // Render OpenGL Cube
-  //pangolin::glDrawColouredCube();
-  //pangolin::glDrawAxis(3);
 
   // Swap frames and Process Events
   pangolin::FinishFrame();
