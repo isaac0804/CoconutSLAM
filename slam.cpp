@@ -6,12 +6,14 @@
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <thread>
+#include <mutex>
 
 #include <pangolin/pangolin.h>
 
 using namespace std;
 using namespace cv;
 
+mutex mtx;
 
 class CocoPoint 
 {
@@ -54,15 +56,15 @@ public:
 class Extractor 
 {
 public: 
-  int MAX_FEATURES = 4000;
-  double scale = 1.0; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
+  int MAX_FEATURES = 8000;
+  double scale = 0.5; // must be integers..... also this affects the time needed for each frame drastically. how can i improve?
   double thresh = 0.75;
   double dist_thresh = 0.1;
 
-  Extractor (int MAX_FEATURES = 4000, 
-            double scale = 1.0,
+  Extractor (int MAX_FEATURES = 8000, 
+            double scale = 0.5,
             double thresh = 0.75,
-            double dist_thresh = 0.1) 
+          double dist_thresh = 0.1) 
   {
     MAX_FEATURES = MAX_FEATURES;
     scale = scale;
@@ -93,11 +95,10 @@ public:
         mask(roi).setTo(Scalar::all(255));
         goodFeaturesToTrack(gray, curr_corners, MAX_FEATURES*scale*scale, 0.1, 8, mask, 3, false, 0.04);
         corners.insert(corners.end(), curr_corners.begin(), curr_corners.end());
-
-        cout << "Detected corners : " << curr_corners.size() << "\n";
       }
     }
     
+    cout << "Detected corners : " << corners.size() << "\n";
     // Find keypoints and Compute descriptors
     for(size_t i = 0; i < corners.size(); i++) 
     {
@@ -274,7 +275,7 @@ public:
   }
 };
 
-void display3D() 
+void display3D(Map &world) 
 {
   pangolin::BindToContext("3d View");
   glEnable(GL_DEPTH_TEST);
@@ -291,8 +292,13 @@ void display3D()
           .SetBounds(0.0, 1.0, 0.0, 1.0, -640.0f/480.0f)
           .SetHandler(&handler);
   
+  //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  //d_cam.Activate(s_cam);
   while( !pangolin::ShouldQuit() )
   {
+    // Lock the data while in use 
+    mtx.lock();
+
     // Clear screen and activate view to render into
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     d_cam.Activate(s_cam);
@@ -356,6 +362,9 @@ void display3D()
 
   // Swap frames and Process Events
   pangolin::FinishFrame();
+
+  // Unlock the data after use
+  mtx.unlock();
   }
 
   pangolin::GetBoundWindow()->RemoveCurrent();
@@ -364,7 +373,6 @@ void display3D()
 
 int main(int argc, char **argv) 
 {
-
   // Check input
   if(argv[1] == nullptr) 
   {
@@ -386,7 +394,7 @@ int main(int argc, char **argv)
   glEnable(GL_DEPTH_TEST);
   pangolin::GetBoundWindow()->RemoveCurrent();
 
-  thread render(display3D);
+  thread render(display3D, ref(World));
     
   while(1) 
   {
@@ -416,6 +424,7 @@ int main(int argc, char **argv)
     chrono::duration<double> interval = chrono::duration_cast<chrono::duration<double>>(end - start);
     cout << "Time used        : " << interval.count() << "\n";
   }
+  render.join();
 
   cap.release();
   destroyAllWindows();
