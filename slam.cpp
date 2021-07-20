@@ -3,6 +3,7 @@
 #include <chrono>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp> 
+#include <opencv2/calib3d/calib3d.hpp> 
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <thread>
@@ -20,7 +21,7 @@ class CocoPoint
 public: 
   int id;
   vector<Point2f> coords;
-  vector<double> loc;
+  Point3d loc = Point3d(0,0,0);
   vector<int> frames_id;
 
   CocoPoint(int point_id, int frame_id, Point2f coord) {
@@ -172,6 +173,7 @@ public:
   vector<CocoPoint> points;  
   Extractor extractor = Extractor();
   Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
+  Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
 
   void initFirstFrame(Mat &first_frame) 
   {
@@ -272,6 +274,46 @@ public:
     cout << "Total Frames     : " << frames.size() << "\n";
     cout << "Total Points     : " << points.size() << "\n";
   }
+
+  void triangulate() 
+  {
+    Frame prev_frame = frames[frames.size()-2];
+    Frame curr_frame = frames[frames.size()-1];
+      
+    Mat T1 = prev_frame.pose.rowRange(0, 3).clone();
+    // Mat T1 = (Mat_<double>(3,4) <<
+    //   1, 0, 0, 0,
+    //   0, 1, 0, 0,
+    //   0, 0, 1, 0);
+    Mat T2 = curr_frame.pose.rowRange(0, 3).clone();
+
+    vector<Point2f> pts_1, pts_2;
+    for(size_t i = 0; i < curr_frame.kps.size(); i++) 
+    {
+      if(curr_frame.pts_id[i] != -1  && points[curr_frame.pts_id[i]].loc == Point3d(0,0,0))
+      {
+        pts_1.push_back(points[curr_frame.pts_id[i]].coords[points[curr_frame.pts_id[i]].coords.size()-2]);
+        pts_2.push_back(points[curr_frame.pts_id[i]].coords[points[curr_frame.pts_id[i]].coords.size()-1]);
+      }
+    }
+    undistortPoints(pts_1, pts_1, K, dist);
+    undistortPoints(pts_2, pts_2, K, dist);
+
+    Mat pts_4d;
+    triangulatePoints(T1, T2, pts_1, pts_2, pts_4d);
+
+    for(size_t i = 0; i < pts_4d.cols; i++)
+    {
+      Mat temp = pts_4d.col(i);
+      temp = temp / temp.at<float>(3,0);
+      Point3d p(
+          temp.at<float>(0,0),
+          temp.at<float>(1,0),
+          temp.at<float>(2,0)
+      );
+      points[curr_frame.pts_id[i]].loc = p;
+    }
+  }
 };
 
 void display3D(Map &world) 
@@ -309,8 +351,9 @@ void display3D(Map &world)
     double h = w * h_ratio;
     double z = w * z_ratio;
 
-    for (size_t i = 0; i < world.frames.size(); i++) {
-
+    // Draw camera movements  
+    for (size_t i = 0; i < world.frames.size(); i++)
+    {
       Mat pose; 
       if(!world.frames[i].pose.empty())
       {
@@ -351,7 +394,6 @@ void display3D(Map &world)
       Twc.m[15]  = 1.0;
 
       glPushMatrix();
-     
       glMultMatrixd(Twc.m);
 
       glBegin(GL_LINES);
@@ -379,6 +421,28 @@ void display3D(Map &world)
 
       glPopMatrix();
     }  
+    for (size_t i = 0; i < world.points.size(); i++)
+    {
+      if(world.points[i].loc == Point3d(0,0,0))
+      {
+        continue;
+      }
+      pangolin::OpenGlMatrix Twc;
+      Twc.SetIdentity();
+    
+      glPushMatrix();
+      glMultMatrixd(Twc.m);
+
+      glPointSize(10);
+      glBegin(GL_POINTS);
+      glColor3f(1.0,0.0,0.0);
+      glVertex3d(world.points[i].loc.x, world.points[i].loc.y, world.points[i].loc.z);
+      glEnd();
+
+      glPopMatrix();
+      cout << "Drawing point " << i << endl;
+      cout << world.points[i].loc.x << "\n" << world.points[i].loc.y << "\n" << world.points[i].loc.z << endl;
+    }
 
   // Render OpenGL Cube
   pangolin::glDrawColouredCube();
@@ -412,6 +476,8 @@ int main(int argc, char **argv)
     return -1;
   }
 
+  Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
+  Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
   Map World = Map(); 
   
   pangolin::CreateWindowAndBind("3d View", 1024, 768);
@@ -428,15 +494,19 @@ int main(int argc, char **argv)
     if(frame.empty()) break;
     cout << "******************Frame " << cap.get(CAP_PROP_POS_FRAMES) << "*****************\n";
 
-    // Feature Extraction using ORB
+    // Process image 
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
+
+    Mat image; 
+    undistort(frame, image, K, dist);
     if(cap.get(CAP_PROP_POS_FRAMES) > 1) 
     {
-      World.extractAndMatch(frame);
+      World.extractAndMatch(image);
       World.estimatePose();
+      World.triangulate();
     }
-    else World.initFirstFrame(frame);
+    else World.initFirstFrame(image);
       
     // Display
     World.displayVideo();
