@@ -177,7 +177,6 @@ public:
   {
     vector<KeyPoint> keypoints; 
     Mat descriptors;
-    //Mat pose = (Mat_<double>(1, 3) << 0.000000e+00, 0.000000e+00, 0.000000e+00);
     Mat pose = Mat::eye(4, 4, CV_64F);
     
     // Find and draw features
@@ -269,7 +268,7 @@ public:
     }
 
     imshow("Videos", image);  
-    cout << "Current Pose     : \n" << frames[frames.size()-1].pose << "\n";
+    cout << "Current Pose     : \n" << frames[frames.size()-1].pose.size() << "\n";
     cout << "Total Frames     : " << frames.size() << "\n";
     cout << "Total Points     : " << points.size() << "\n";
   }
@@ -282,14 +281,14 @@ void display3D(Map &world)
 
   // Define Projection and initial ModelView matrix
   pangolin::OpenGlRenderState s_cam(
-    pangolin::ProjectionMatrix(640,480,420,420,320,240,0.2,100),
-    pangolin::ModelViewLookAt(-2,2,-2, 0,0,0, pangolin::AxisY)
+    pangolin::ProjectionMatrix(1024,768,420,420,512,389,0.1,1000),
+    pangolin::ModelViewLookAt(0, 10, 30, 0,0,0, 0.0,10.0,0.0)
   );
 
   // Create Interactive View in window
   pangolin::Handler3D handler(s_cam);
   pangolin::View& d_cam = pangolin::CreateDisplay()
-          .SetBounds(0.0, 1.0, 0.0, 1.0, -640.0f/480.0f)
+          .SetBounds(0.0, 1.0, 0.0, 1.0, -1024.0f/768.0f)
           .SetHandler(&handler);
   
   //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -302,33 +301,58 @@ void display3D(Map &world)
     // Clear screen and activate view to render into
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     d_cam.Activate(s_cam);
+    //s_cam.Follow(Twc);
+   
+    double w=1.0;
+    double h_ratio=0.75;
+    double z_ratio=0.6;
+    double h = w * h_ratio;
+    double z = w * z_ratio;
 
-    /***
-    float w=1.0;
-    float h_ratio=0.75;
-    float z_ratio=0.6;
-    float h = w * h_ratio;
-    float z = w * z_ratio;
+    for (size_t i = 0; i < world.frames.size(); i++) {
 
-    for (ssize_t i = 0; i < frames.size(); ++i) {
-
-      Mat pose = frames[i].pose;
-
-      Mat cvToGl = Mat::zeros(4, 4, CV_64F);
-      cvToGl.at<double>(0, 0) = 1.0f;
-      cvToGl.at<double>(1, 1) = -1.0f; // Invert the y axis
-      cvToGl.at<double>(2, 2) = -1.0f; // invert the z axis
-      cvToGl.at<double>(3, 3) = 1.0f;
-      pose = cvToGl * pose;
-
-      Mat glPoseMatrix = Mat::zeros(4, 4, CV_64F);
-      transpose(pose, glPoseMatrix);
-      glMatrixMode(GL_MODELVIEW);
-      glLoadMatrixd(&glPoseMatrix.at<double>(0, 0));
+      Mat pose; 
+      if(!world.frames[i].pose.empty())
+      {
+        pose = world.frames[i].pose.clone();
+      }
+      else
+      {
+        break;
+      }
+      pangolin::OpenGlMatrix Twc;
+      Twc.SetIdentity();
       
-      glMultTransposeMatrixd(glPoseMatrix);
+      Mat Rwc(3, 3, CV_64F);
+      Mat twc(3, 1, CV_64F);
+      
+      Rwc = pose.rowRange(0, 3).colRange(0, 3).t();
+      //twc = -Rwc*pose.rowRange(0, 3).col(3);
+      twc = Rwc*pose.rowRange(0, 3).col(3);
+
+      Twc.m[0] = Rwc.at<double>(0,0);
+      Twc.m[1] = Rwc.at<double>(1,0);
+      Twc.m[2] = Rwc.at<double>(2,0);
+      Twc.m[3]  = 0.0;
+
+      Twc.m[4] = Rwc.at<double>(0,1);
+      Twc.m[5] = Rwc.at<double>(1,1);
+      Twc.m[6] = Rwc.at<double>(2,1);
+      Twc.m[7]  = 0.0;
+
+      Twc.m[8] = Rwc.at<double>(0,2);
+      Twc.m[9] = Rwc.at<double>(1,2);
+      Twc.m[10] = Rwc.at<double>(2,2);
+      Twc.m[11]  = 0.0;
+
+      Twc.m[12] = twc.at<double>(0);
+      Twc.m[13] = twc.at<double>(1);
+      Twc.m[14] = twc.at<double>(2);
+      Twc.m[15]  = 1.0;
 
       glPushMatrix();
+     
+      glMultMatrixd(Twc.m);
 
       glBegin(GL_LINES);
       glVertex3f(0,0,0);
@@ -355,10 +379,10 @@ void display3D(Map &world)
 
       glPopMatrix();
     }  
-    ***/
 
   // Render OpenGL Cube
   pangolin::glDrawColouredCube();
+  pangolin::glDrawAxis(3);
 
   // Swap frames and Process Events
   pangolin::FinishFrame();
@@ -390,7 +414,7 @@ int main(int argc, char **argv)
 
   Map World = Map(); 
   
-  pangolin::CreateWindowAndBind("3d View", 640, 480);
+  pangolin::CreateWindowAndBind("3d View", 1024, 768);
   glEnable(GL_DEPTH_TEST);
   pangolin::GetBoundWindow()->RemoveCurrent();
 
