@@ -288,7 +288,7 @@ public:
     
     //frames[frames.size()-1].pose = frames[frames.size()-2].pose*T;
     frames[frames.size()-1].pose = T*frames[frames.size()-2].pose;
-    lowest_z = min(lowest_z, frames[frames.size()-1].pose.at<double>(2,3));
+    //lowest_z = min(lowest_z, -frames[frames.size()-1].pose.at<double>(2,3));
   }
 
   void displayVideo() 
@@ -346,10 +346,10 @@ public:
           temp.at<float>(1,0),
           temp.at<float>(2,0)
       );
-      if(temp.at<float>(2,0) > lowest_z or temp.at<float>(1,0) < 0.5)
-      {
-        points[ids[i]].loc.push_back(p);
-      }
+      //if(temp.at<float>(2,0) + 20 > lowest_z)
+      //{
+      points[ids[i]].loc.push_back(p);
+      //}
     }
   }
 };
@@ -508,6 +508,7 @@ void display3D(Map &world)
 
       glPopMatrix();
     }
+  pangolin::glDrawAxis(3);
 
   // Swap frames and Process Events
   pangolin::FinishFrame();
@@ -572,13 +573,29 @@ int main(int argc, char **argv)
     // Display
     World.displayVideo();
 
-    char c = (char)waitKey(1000/cap.get(CAP_PROP_FPS)); // display according to original fps
+    //char c = (char)waitKey(1000/cap.get(CAP_PROP_FPS)); // display according to original fps
+    char c = (char)waitKey(1);
     if(c==27) break; // Esc 
 
     chrono::steady_clock::time_point end = chrono::steady_clock::now();
     chrono::duration<double> interval = chrono::duration_cast<chrono::duration<double>>(end - start);
     cout << "Time used        : " << interval.count() << "\n";
   }
+
+  vector<int>::size_type max_obs = 2; 
+  int arr[100] = {0};
+  int good_sum = 0;
+  for(size_t i = 0;  i < World.points.size(); i++)
+  {
+    max_obs = max(World.points[i].frames_id.size(), max_obs);
+    arr[World.points[i].frames_id.size()] += 1;
+  }
+  cout << "The max appearance of a point is "<< max_obs << endl;
+  for(size_t i = 3; i < max_obs; i++)
+  {
+    good_sum += arr[i];
+  }
+  cout << "The proportion of good matched points: " << (double)good_sum/World.points.size() << endl; 
   render.join();
 
   cap.release();
