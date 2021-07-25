@@ -117,9 +117,9 @@ public:
     Frame &curr_frame = frames[frames.size()-1];
     
     // Match keypoints based on descriptors
-    BFMatcher matcher;
+    Ptr<BFMatcher> matcher = BFMatcher::create(NORM_HAMMING2);
     vector<vector<DMatch>> knn_matches;
-    matcher.knnMatch(curr_frame.dps, prev_frame.dps, knn_matches, 8);
+    matcher->knnMatch(curr_frame.dps, prev_frame.dps, knn_matches, 2);
 
     // Filter invalid matches 
     vector<DMatch> good_matches;
@@ -462,7 +462,7 @@ void display3D(Map &world)
     }  
     for (size_t i = 0; i < world.points.size(); i++)
     {
-      if(world.points[i].loc.size() < 2) 
+      if(world.points[i].loc.size() < 3) 
       {
         continue;
       }
@@ -496,14 +496,7 @@ void display3D(Map &world)
       y /= world.points[i].loc.size();
       z /= world.points[i].loc.size();
       if(isnan(x) or isnan(y) or isnan(z)) continue;
-      //if(z > 0)
-      //{
       glVertex3d(x, y, z);
-      //}
-      //else
-      //{
-      //glVertex3d(x, y, -z);
-      //}
       glEnd();
 
       glPopMatrix();
@@ -583,19 +576,18 @@ int main(int argc, char **argv)
   }
 
   vector<int>::size_type max_obs = 2; 
-  int arr[100] = {0};
+  int arr[10000] = {0};
   int good_sum = 0;
   for(size_t i = 0;  i < World.points.size(); i++)
   {
     max_obs = max(World.points[i].frames_id.size(), max_obs);
-    arr[World.points[i].frames_id.size()] += 1;
+    if(World.points[i].frames_id.size() >= 3)
+    {
+      good_sum += 1;
+    }
   }
   cout << "The max appearance of a point is "<< max_obs << endl;
-  for(size_t i = 3; i < max_obs; i++)
-  {
-    good_sum += arr[i];
-  }
-  cout << "The proportion of good matched points: " << (double)good_sum/World.points.size() << endl; 
+  cout << "The proportion of good matched points: " << (double)good_sum/(double)World.points.size() << endl; 
   render.join();
 
   cap.release();
