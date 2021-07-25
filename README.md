@@ -27,7 +27,7 @@ CoconutSLAM is a SLAM written in bad C++ code during a holiday. It is bad and th
 - g2o optimization
 - save and load point maps
 - filter points behind camera
-- use better matching algorithms
+- use better matching algorithms (done, HAMMING 2)
 - if it doesn't work, we use ORB and implement modifications in ORB SLAM 2
 - essential matrix is weird, why
 - triangulate isn't great

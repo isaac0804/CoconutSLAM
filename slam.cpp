@@ -1,13 +1,14 @@
 #include <iostream>
 #include <vector>
 #include <chrono>
+#include <thread>
+#include <mutex>
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp> 
 #include <opencv2/calib3d/calib3d.hpp> 
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <thread>
-#include <mutex>
 
 #include <pangolin/pangolin.h>
 
@@ -65,7 +66,7 @@ public:
   Extractor (int MAX_FEATURES = 3000, 
             double scale = 1.0,
             double thresh = 0.75,
-          double dist_thresh = 0.1) 
+            double dist_thresh = 0.1) 
   {
     MAX_FEATURES = MAX_FEATURES;
     scale = scale;
@@ -313,10 +314,6 @@ public:
     Frame curr_frame = frames[frames.size()-1];
       
     Mat T1 = prev_frame.pose.rowRange(0, 3).clone();
-    // Mat T1 = (Mat_<double>(3,4) <<
-    //   1, 0, 0, 0,
-    //   0, 1, 0, 0,
-    //   0, 0, 1, 0);
     Mat T2 = curr_frame.pose.rowRange(0, 3).clone();
 
     vector<Point2f> pts_1, pts_2;
@@ -346,10 +343,7 @@ public:
           temp.at<float>(1,0),
           temp.at<float>(2,0)
       );
-      //if(temp.at<float>(2,0) + 20 > lowest_z)
-      //{
       points[ids[i]].loc.push_back(p);
-      //}
     }
   }
 };
@@ -359,11 +353,12 @@ void display3D(Map &world)
 {
   pangolin::BindToContext("3d View");
   glEnable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
 
   // Define Projection and initial ModelView matrix
   pangolin::OpenGlRenderState s_cam(
     pangolin::ProjectionMatrix(1024,768,420,420,512,389,0.1,1000),
-    pangolin::ModelViewLookAt(0, -100, -0.1, 0,0,0, pangolin::AxisNegY)
+    pangolin::ModelViewLookAt(1, -20, -60, 0,0,0, pangolin::AxisNegY)
   );
 
   // Create Interactive View in window
@@ -372,8 +367,6 @@ void display3D(Map &world)
           .SetBounds(0.0, 1.0, 0.0, 1.0, -1024.0f/768.0f)
           .SetHandler(&handler);
   
-  //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  //d_cam.Activate(s_cam);
   while( !pangolin::ShouldQuit() )
   {
     // Lock the data while in use 
@@ -382,7 +375,6 @@ void display3D(Map &world)
     // Clear screen and activate view to render into
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     d_cam.Activate(s_cam);
-    //s_cam.Follow(Twc);
    
     double w=1.0;
     double h_ratio=0.75;
@@ -430,6 +422,8 @@ void display3D(Map &world)
       Twc.m[13] = twc.at<double>(1);
       Twc.m[14] = twc.at<double>(2);
       Twc.m[15]  = 1.0;
+
+      s_cam.Follow(Twc);
 
       glPushMatrix();
       glMultMatrixd(Twc.m);
@@ -531,8 +525,6 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  //Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
-  //Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
   Map World = Map(); 
   
   pangolin::CreateWindowAndBind("3d View", 1024, 768);
@@ -552,9 +544,6 @@ int main(int argc, char **argv)
     // Process image 
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-
-    //Mat temp = frame.clone();
-    //undistort(temp, frame, K, dist);
     if(cap.get(CAP_PROP_POS_FRAMES) > 1) 
     {
       World.extractAndMatch(frame);
