@@ -12,8 +12,21 @@
 
 #include <pangolin/pangolin.h>
 
+#include <Eigen/Core>
+
+#include <g2o/core/sparse_optimizer.h>
+#include <g2o/core/block_solver.h>
+#include <g2o/core/robust_kernel_impl.h>
+#include <g2o/core/base_vertex.h>
+#include <g2o/core/optimization_algorithm_levenberg.h>
+#include <g2o/solvers/eigen/linear_solver_eigen.h>
+#include <g2o/types/sba/types_six_dof_expmap.h>
+#include <g2o/types/sba/types_sba.h>
+
 using namespace std;
 using namespace cv;
+using namespace Eigen;
+using namespace g2o;
 
 mutex mtx;
 
@@ -22,7 +35,7 @@ class CocoPoint
 public: 
   int id;
   vector<Point2f> coords;
-  vector<Point3d> loc;
+  Point3d loc;
   vector<int> frames_id;
 
   CocoPoint(int point_id, int frame_id, Point2f coord) {
@@ -53,6 +66,24 @@ public:
     dps = frame_dps;
   }
 };
+
+//class VertexPoint : public g2o::BaseVertex<3, Vector3d> {
+//  public:
+//  EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+//
+//  VertexPoint() {}
+//
+//  virtual void setToOriginImpl() override {
+//  _estimate = Vector3d(0, 0, 0);
+//  }
+//  
+//  virtual void oplusImpl(const double *update) override {
+//  _estimate += Vector3d(update[0], update[1], update[2]);
+//  }
+//
+//  virtual bool read(istream &in) {}
+//  virtual bool write (ostream &out) const {}
+//};
 
 
 class Extractor 
@@ -166,7 +197,7 @@ public:
 };
 
 
-class Map
+class PointMap
 {
 public:
   vector<Frame> frames;
@@ -174,7 +205,6 @@ public:
   Extractor extractor = Extractor();
   Mat K = (Mat_<double>(3, 3) << 9.842439e+02, 0.000000e+00, 6.900000e+02, 0.000000e+00, 9.808141e+02, 2.331966e+02, 0.000000e+00, 0.000000e+00, 1.000000e+00);
   Mat dist = (Mat_<double>(1, 5) << -3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02);
-  double lowest_z = 0.0;
 
   void initFirstFrame(Mat &first_frame) 
   {
@@ -343,13 +373,96 @@ public:
           temp.at<float>(1,0),
           temp.at<float>(2,0)
       );
-      points[ids[i]].loc.push_back(p);
+      points[ids[i]].loc = p;
     }
   }
 };
-    
 
-void display3D(Map &world) 
+void graphOptimize(PointMap &world)
+{
+  typedef BlockSolver_6_3  SlamBlockSolver;
+  typedef LinearSolverEigen<SlamBlockSolver::PoseMatrixType> SlamLinearSolver;
+
+  // allocating the optimizer
+  g2o::SparseOptimizer optimizer;
+
+  auto linearSolver = g2o::make_unique<SlamLinearSolver>();
+  linearSolver->setBlockOrdering(false);
+  OptimizationAlgorithmLevenberg* solver = new OptimizationAlgorithmLevenberg(
+     g2o::make_unique<SlamBlockSolver>(std::move(linearSolver)));
+
+  optimizer.setAlgorithm(solver);
+  optimizer.setVerbose(true);
+
+  // Add pose vertices
+  for(size_t i = 0; i < world.frames.size(); i++)
+  {
+    const Frame& frame = world.frames[i];
+    VertexSE3Expmap* vPose = new VertexSE3Expmap;
+    
+    Eigen::Matrix<double,3,3> R;
+    R << frame.pose.at<float>(0,0), frame.pose.at<float>(0,1), frame.pose.at<float>(0,2),
+       frame.pose.at<float>(1,0), frame.pose.at<float>(1,1), frame.pose.at<float>(1,2),
+       frame.pose.at<float>(2,0), frame.pose.at<float>(2,1), frame.pose.at<float>(2,2);
+    Eigen::Matrix<double,3,1> t(frame.pose.at<float>(0,3), frame.pose.at<float>(1,3), frame.pose.at<float>(2,3));
+    vPose->setId(i*2);
+    vPose->setEstimate(g2o::SE3Quat(R,t));
+    if(i == 0) vPose->setFixed(true);
+    optimizer.addVertex(vPose);
+    cout << "Adding pose vertex " << i << endl;
+  }
+
+  // Add point vertices
+  for(size_t i = 0; i < world.points.size(); i++)
+  {
+    if( world.points[i].loc.x != 0 && world.points[i].loc.y != 0 && world.points[i].loc.z != 0) 
+    {
+      VertexPointXYZ* vPoint = new VertexPointXYZ();
+
+      Matrix<double, 3, 1> v;
+      v << world.points[i].loc.x, world.points[i].loc.y, world.points[i].loc.z;
+
+      vPoint->setEstimate(v);
+      vPoint->setId(i*2+1);
+      vPoint->setMarginalized(true);
+      optimizer.addVertex(vPoint);
+      cout << "Adding point vertex " << i << endl;
+    
+      for(size_t j = 0; j < world.points[i].frames_id.size(); j++)
+      {
+        Matrix<double, 2, 1> obs;
+        obs << world.points[i].coords[j].x, world.points[i].coords[j].y;
+
+        EdgeSE3ProjectXYZ* e = new EdgeSE3ProjectXYZ();
+
+        e->setVertex(0, dynamic_cast<OptimizableGraph::Vertex*>(optimizer.vertex(i*2+1)));
+        e->setVertex(1, dynamic_cast<OptimizableGraph::Vertex*>(optimizer.vertex(world.points[i].frames_id[j]*2)));
+        e->setVertex(0, vPoint);
+        e->setMeasurement(obs);
+        e->setInformation(Matrix2d::Identity());
+        
+        RobustKernelHuber* rk = new g2o::RobustKernelHuber;
+        e->setRobustKernel(rk);
+        rk->setDelta(sqrt(5.99));
+
+        e->fx = 9.842439e+02;
+        e->fy = 9.808141e+02;
+        e->cx = 6.900000e+02;
+        e->cy = 2.331966e+02;
+
+        optimizer.addEdge(e);
+        cout << "Connecting point " << i*2+1 << " with pose " << world.points[i].frames_id[j] << endl;
+      }
+    }
+  }
+
+  cout << "Done" << endl;
+
+  optimizer.initializeOptimization();
+  optimizer.optimize(100);
+}  
+
+void display3D(PointMap &world) 
 {
   pangolin::BindToContext("3d View");
   glEnable(GL_DEPTH_TEST);
@@ -456,10 +569,6 @@ void display3D(Map &world)
     }  
     for (size_t i = 0; i < world.points.size(); i++)
     {
-      if(world.points[i].loc.size() < 3) 
-      {
-        continue;
-      }
 
       pangolin::OpenGlMatrix Twc;
       Twc.SetIdentity();
@@ -477,18 +586,9 @@ void display3D(Map &world)
           glColor3f(1.0,0.2,0.0);
         }
       }
-      double x = 0; 
-      double y = 0; 
-      double z = 0; 
-      for(size_t j = 0; j < world.points[i].loc.size(); j++)
-      {
-        x += world.points[i].loc[j].x;
-        y += world.points[i].loc[j].y;
-        z += world.points[i].loc[j].z;
-      }
-      x /= world.points[i].loc.size();
-      y /= world.points[i].loc.size();
-      z /= world.points[i].loc.size();
+      double x = world.points[i].loc.x;
+      double y = world.points[i].loc.y;
+      double z = world.points[i].loc.z;
       if(isnan(x) or isnan(y) or isnan(z)) continue;
       glVertex3d(x, y, z);
       glEnd();
@@ -525,7 +625,7 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  Map World = Map(); 
+  PointMap World = PointMap(); 
   
   pangolin::CreateWindowAndBind("3d View", 1024, 768);
   glEnable(GL_DEPTH_TEST);
@@ -549,8 +649,12 @@ int main(int argc, char **argv)
       World.extractAndMatch(frame);
       World.estimatePose();
       World.triangulate();
+      if(cap.get(CAP_PROP_POS_FRAMES) > 4) graphOptimize(ref(World));
     }
-    else World.initFirstFrame(frame);
+    else
+    {
+      World.initFirstFrame(frame);
+    }
       
     // Display
     World.displayVideo();
@@ -575,6 +679,7 @@ int main(int argc, char **argv)
       good_sum += 1;
     }
   }
+
   cout << "The max appearance of a point is "<< max_obs << endl;
   cout << "The proportion of good matched points: " << (double)good_sum/(double)World.points.size() << endl; 
   render.join();
