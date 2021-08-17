@@ -11,6 +11,8 @@ CoconutSLAM is a SLAM written in bad C++ code during a holiday. It is bad and th
 - triangulate based on R, t
 - a thread for pangolin
 
+# Results
+![Kitti Dataset](videos/CoconutSLAM-2021-08-17_20.41.25.gif)
 
 # Library
 - opencv 

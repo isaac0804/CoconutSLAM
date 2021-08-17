@@ -293,29 +293,29 @@ public:
     vconcat(T, btm, T);
     T.convertTo(T, CV_64F);
 
-    Mat t_x = (Mat_<double>(3, 3) << 0, -t.at<double>(2, 0), t.at<double>(1, 0),
-        t.at<double>(2, 0), 0, -t.at<double>(0, 0),
-        -t.at<double>(1, 0), t.at<double>(0, 0), 0);
-    cout << "t^R=" << endl << t_x * R << endl;
+    //Mat t_x = (Mat_<double>(3, 3) << 0, -t.at<double>(2, 0), t.at<double>(1, 0),
+    //    t.at<double>(2, 0), 0, -t.at<double>(0, 0),
+    //    -t.at<double>(1, 0), t.at<double>(0, 0), 0);
+    //cout << "t^R=" << endl << t_x * R << endl;
 
-    for(size_t i = 0; i < frames[frames.size()-1].pts_id.size(); i++)
-    {
-      if(frames[frames.size()-1].pts_id[i] != -1)
-      {
-        for(size_t j = 0; j < points[frames[frames.size()-1].pts_id[i]].frames_id.size(); j++)
-        {
-          if(points[frames[frames.size()-1].pts_id[i]].frames_id[j] == frames.size()-2) 
-          {
-            Point2d pt1 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-1];
-            Mat y1 = (Mat_<double>(3, 1) << pt1.x, pt1.y, 1);
-            Point2d pt2 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-2];
-            Mat y2 = (Mat_<double>(3, 1) << pt2.x, pt2.y, 1);
-            Mat d = y2.t() * t_x * R * y1;
-            cout << "epipolar constraint" << d << endl; 
-          }
-        }
-      }
-    }
+    //for(size_t i = 0; i < frames[frames.size()-1].pts_id.size(); i++)
+    //{
+    //  if(frames[frames.size()-1].pts_id[i] != -1)
+    //  {
+    //    for(size_t j = 0; j < points[frames[frames.size()-1].pts_id[i]].frames_id.size(); j++)
+    //    {
+    //      if(points[frames[frames.size()-1].pts_id[i]].frames_id[j] == frames.size()-2) 
+    //      {
+    //        Point2d pt1 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-1];
+    //        Mat y1 = (Mat_<double>(3, 1) << pt1.x, pt1.y, 1);
+    //        Point2d pt2 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-2];
+    //        Mat y2 = (Mat_<double>(3, 1) << pt2.x, pt2.y, 1);
+    //        Mat d = y2.t() * t_x * R * y1;
+    //        cout << "epipolar constraint" << d << endl; 
+    //      }
+    //    }
+    //  }
+    //}
     
     //frames[frames.size()-1].pose = frames[frames.size()-2].pose*T;
     frames[frames.size()-1].pose = T*frames[frames.size()-2].pose;
@@ -645,14 +645,14 @@ int main(int argc, char **argv)
   pangolin::GetBoundWindow()->RemoveCurrent();
 
   thread render(display3D, ref(World));
-    
+
   while(1) 
   {
     // Load frame from video
     Mat frame;
     cap >> frame;
     if(frame.empty()) break;
-    cout << "******************Frame " << cap.get(CAP_PROP_POS_FRAMES) << "*****************\n";
+    cout << "****************** Frame " << cap.get(CAP_PROP_POS_FRAMES) << " *****************\n";
 
     // Process image 
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
@@ -662,7 +662,6 @@ int main(int argc, char **argv)
       World.extractAndMatch(frame);
       World.estimatePose();
       World.triangulate();
-      if(int(cap.get(CAP_PROP_POS_FRAMES)) % 5 == 0) graphOptimize(ref(World));
     }
     else
     {
@@ -673,7 +672,7 @@ int main(int argc, char **argv)
     World.displayVideo();
 
     //char c = (char)waitKey(1000/cap.get(CAP_PROP_FPS)); // display according to original fps
-    char c = (char)waitKey(1000);
+    char c = (char)waitKey(1);
     if(c==27) break; // Esc 
 
     chrono::steady_clock::time_point end = chrono::steady_clock::now();
