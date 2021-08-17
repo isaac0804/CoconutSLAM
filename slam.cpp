@@ -293,29 +293,29 @@ public:
     vconcat(T, btm, T);
     T.convertTo(T, CV_64F);
 
-    //Mat t_x = (Mat_<double>(3, 3) << 0, -t.at<double>(2, 0), t.at<double>(1, 0),
-    //    t.at<double>(2, 0), 0, -t.at<double>(0, 0),
-    //    -t.at<double>(1, 0), t.at<double>(0, 0), 0);
-    //cout << "t^R=" << endl << t_x * R << endl;
+    Mat t_x = (Mat_<double>(3, 3) << 0, -t.at<double>(2, 0), t.at<double>(1, 0),
+        t.at<double>(2, 0), 0, -t.at<double>(0, 0),
+        -t.at<double>(1, 0), t.at<double>(0, 0), 0);
+    cout << "t^R=" << endl << t_x * R << endl;
 
-    //for(size_t i = 0; i < frames[frames.size()-1].pts_id.size(); i++)
-    //{
-    //  if(frames[frames.size()-1].pts_id[i] != -1)
-    //  {
-    //    for(size_t j = 0; j < points[frames[frames.size()-1].pts_id[i]].frames_id.size(); j++)
-    //    {
-    //      if(points[frames[frames.size()-1].pts_id[i]].frames_id[j] == frames.size()-2) 
-    //      {
-    //        Point2d pt1 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-1];
-    //        Mat y1 = (Mat_<double>(3, 1) << pt1.x, pt1.y, 1);
-    //        Point2d pt2 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-2];
-    //        Mat y2 = (Mat_<double>(3, 1) << pt2.x, pt2.y, 1);
-    //        Mat d = y2.t() * t_x * R * y1;
-    //        cout << "epipolar constraint" << d << endl; 
-    //      }
-    //    }
-    //  }
-    //}
+    for(size_t i = 0; i < frames[frames.size()-1].pts_id.size(); i++)
+    {
+      if(frames[frames.size()-1].pts_id[i] != -1)
+      {
+        for(size_t j = 0; j < points[frames[frames.size()-1].pts_id[i]].frames_id.size(); j++)
+        {
+          if(points[frames[frames.size()-1].pts_id[i]].frames_id[j] == frames.size()-2) 
+          {
+            Point2d pt1 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-1];
+            Mat y1 = (Mat_<double>(3, 1) << pt1.x, pt1.y, 1);
+            Point2d pt2 = points[frames[frames.size()-1].pts_id[i]].coords[points[frames[frames.size()-1].pts_id[i]].coords.size()-2];
+            Mat y2 = (Mat_<double>(3, 1) << pt2.x, pt2.y, 1);
+            Mat d = y2.t() * t_x * R * y1;
+            cout << "epipolar constraint" << d << endl; 
+          }
+        }
+      }
+    }
     
     //frames[frames.size()-1].pose = frames[frames.size()-2].pose*T;
     frames[frames.size()-1].pose = T*frames[frames.size()-2].pose;
@@ -384,7 +384,7 @@ void graphOptimize(PointMap &world)
   typedef LinearSolverEigen<SlamBlockSolver::PoseMatrixType> SlamLinearSolver;
 
   // allocating the optimizer
-  g2o::SparseOptimizer optimizer;
+  SparseOptimizer optimizer;
 
   auto linearSolver = g2o::make_unique<SlamLinearSolver>();
   linearSolver->setBlockOrdering(false);
@@ -406,7 +406,7 @@ void graphOptimize(PointMap &world)
        frame.pose.at<float>(2,0), frame.pose.at<float>(2,1), frame.pose.at<float>(2,2);
     Eigen::Matrix<double,3,1> t(frame.pose.at<float>(0,3), frame.pose.at<float>(1,3), frame.pose.at<float>(2,3));
     vPose->setId(i*2);
-    vPose->setEstimate(g2o::SE3Quat(R,t));
+    vPose->setEstimate(g2o::SE3Quat(R, t));
     if(i == 0) vPose->setFixed(true);
     optimizer.addVertex(vPose);
     cout << "Adding pose vertex " << i << endl;
@@ -459,7 +459,20 @@ void graphOptimize(PointMap &world)
   cout << "Done" << endl;
 
   optimizer.initializeOptimization();
-  optimizer.optimize(100);
+  optimizer.optimize(5);
+
+  for(size_t i = 0; i < world.frames.size(); i++)
+  {
+    VertexSE3Expmap* vPose = static_cast<VertexSE3Expmap*>(optimizer.vertex(i*2));
+    
+    SE3Quat SE3quat = vPose->estimate();
+    Matrix<double,4,4> eigMat = SE3quat.to_homogeneous_matrix();
+    Mat cvMat(4,4,CV_64F);
+    for(int i=0;i<4;i++)
+        for(int j=0; j<4; j++)
+            cvMat.at<double>(i,j) = eigMat(i,j);
+    world.frames[i].pose = cvMat;
+  }
 }  
 
 void display3D(PointMap &world) 
@@ -514,7 +527,7 @@ void display3D(PointMap &world)
       Mat twc(3, 1, CV_64F);
       
       Rwc = pose.rowRange(0, 3).colRange(0, 3).t();
-      twc = -Rwc*pose.rowRange(0, 3).col(3);
+      twc = Rwc*-pose.rowRange(0, 3).col(3);
 
       Twc.m[0] = Rwc.at<double>(0,0);
       Twc.m[1] = Rwc.at<double>(1,0);
@@ -574,7 +587,7 @@ void display3D(PointMap &world)
       Twc.SetIdentity();
     
       glPushMatrix();
-      glMultMatrixd(Twc.m);
+      //glMultMatrixd(Twc.m);
 
       glPointSize(1.5);
       glBegin(GL_POINTS);
@@ -649,7 +662,7 @@ int main(int argc, char **argv)
       World.extractAndMatch(frame);
       World.estimatePose();
       World.triangulate();
-      if(cap.get(CAP_PROP_POS_FRAMES) > 4) graphOptimize(ref(World));
+      if(int(cap.get(CAP_PROP_POS_FRAMES)) % 5 == 0) graphOptimize(ref(World));
     }
     else
     {
@@ -660,7 +673,7 @@ int main(int argc, char **argv)
     World.displayVideo();
 
     //char c = (char)waitKey(1000/cap.get(CAP_PROP_FPS)); // display according to original fps
-    char c = (char)waitKey(1);
+    char c = (char)waitKey(1000);
     if(c==27) break; // Esc 
 
     chrono::steady_clock::time_point end = chrono::steady_clock::now();

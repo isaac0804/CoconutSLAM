@@ -2,3 +2,6 @@ build/
 *.swp
 videos/
 ThirdParty/
+
+readImage.cpp
+stereoVision.cpp
