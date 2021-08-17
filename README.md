@@ -12,7 +12,7 @@ CoconutSLAM is a SLAM written in bad C++ code during a holiday. It is bad and th
 - a thread for pangolin
 
 # Results
-![Kitti Dataset](videos/CoconutSLAM-2021-08-17_20.41.25.gif)
+![Kitti Dataset](results/Kitti-Dataset.gif)
 
 # Library
 - opencv 
